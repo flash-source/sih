@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+.env
+*.egg-info/
+dist/
+build/
+
+# Machine Learning Artifacts
+# We ignore .pkl files generally, but you can force-add specific ones if needed
+*.pkl
+*.joblib
+models/
+!models/.gitkeep
+
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Data (Keep the CSV out of git if it's too large, though 1700 rows is fine. Uncomment if you want to ignore it)
+# ml/data/*.csv
