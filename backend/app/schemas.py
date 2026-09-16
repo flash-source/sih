@@ -17,10 +17,19 @@ class ProjectCreate(ProjectBase):
 
 class ProjectOut(ProjectBase):
     id: int
+    project_code: Optional[str] = None
     status: str  # PLANNING, IN_PROGRESS, DELAYED, COMPLETED
     progress_percent: Optional[float] = None
     total_cost: float
+    original_cost: Optional[float] = None
+    revised_cost: Optional[float] = None
+    cumulative_expenditure: Optional[float] = None
+    original_commissioning_date: Optional[datetime] = None
+    revised_commissioning_date: Optional[datetime] = None
     created_at: datetime
+
+    blended_risk_score: Optional[float] = None
+    risk_band: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

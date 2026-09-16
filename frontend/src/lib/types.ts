@@ -1,5 +1,3 @@
-// frontend/src/lib/types.ts
-
 export interface Project {
   id: number;
   name: string;
@@ -7,10 +5,18 @@ export interface Project {
   state: string;
   district?: string;
   sector?: string;
+  project_code?: string;
   status: 'PLANNING' | 'IN_PROGRESS' | 'DELAYED' | 'COMPLETED';
   progress_percent?: number;
   total_cost: number;
+  original_cost?: number;
+  revised_cost?: number;
+  cumulative_expenditure?: number;
+  original_commissioning_date?: string;
+  revised_commissioning_date?: string;
   created_at: string;
+  blended_risk_score?: number;
+  risk_band?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 }
 
 export interface RiskScore {

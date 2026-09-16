@@ -1,4 +1,3 @@
-# backend/app/models.py
 from sqlalchemy import Column, Integer, String, Float, DateTime, Numeric  # type: ignore[import-not-found]
 from app.database import Base
 import datetime
@@ -12,10 +11,19 @@ class Project(Base):
     state = Column(String, index=True)
     district = Column(String, nullable=True)
     sector = Column(String, nullable=True)
-    
+    project_code = Column(String, nullable=True, index=True)
+
     start_date = Column(DateTime, nullable=True)
     end_date = Column(DateTime, nullable=True)
-    
+
+    original_commissioning_date = Column(DateTime, nullable=True)
+    revised_commissioning_date = Column(DateTime, nullable=True)
+    sanction_date = Column(DateTime, nullable=True)
+
+    original_cost = Column(Numeric(18, 2), default=0.0)
+    revised_cost = Column(Numeric(18, 2), default=0.0)
+    cumulative_expenditure = Column(Numeric(18, 2), default=0.0)
+
     total_cost = Column(Numeric(18, 2), default=0.0) # NUMERIC(18,2) for Crores (Gotcha #1)
     progress_percent = Column(Float, default=0.0)
     
