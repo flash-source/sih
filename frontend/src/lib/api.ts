@@ -1,33 +1,47 @@
-import { Project, RiskScore, DashboardSummary } from './types';
+import { Project, RiskScore, DashboardSummary, RiskDistribution, RiskBySector } from "./types";
 
-const API_BASE = '/api/v1'; 
+const API_BASE =
+  typeof window === "undefined"
+    ? `${process.env.FASTAPI_BASE_URL ?? "http://localhost:8000"}/api/v1`
+    : "/api/v1";
 
-export async function fetchProjects(limit: number = 2000): Promise<Project[]> {
-  const res = await fetch(`${API_BASE}/projects?limit=${limit}`);
-  if (!res.ok) throw new Error('Failed to fetch projects');
+async function getJSON<T>(path: string, revalidateSeconds = 30): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { next: { revalidate: revalidateSeconds } });
+  if (!res.ok) throw new Error(`${path} responded ${res.status}`);
   return res.json();
 }
 
+export const FULL_PORTFOLIO_LIMIT = 2000;
+
+export async function fetchProjects(params: { skip?: number; limit?: number } = {}): Promise<Project[]> {
+  const search = new URLSearchParams();
+  if (params.skip) search.set("skip", String(params.skip));
+  search.set("limit", String(params.limit ?? 100));
+  return getJSON<Project[]>(`/projects?${search.toString()}`);
+}
+
+export async function fetchProject(projectId: number): Promise<Project> {
+  return getJSON<Project>(`/projects/${projectId}`);
+}
+
 export async function fetchProjectRisk(projectId: number): Promise<RiskScore> {
-  const res = await fetch(`${API_BASE}/predict-risk?project_id=${projectId}`, { method: 'POST' });
-  if (!res.ok) throw new Error('Failed to fetch risk score');
+  // Computes and persists a fresh score server-side -- POST, not GET.
+  const res = await fetch(`${API_BASE}/predict-risk?project_id=${projectId}`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`predict-risk responded ${res.status}`);
   return res.json();
 }
 
 export async function fetchDashboardSummary(): Promise<DashboardSummary> {
-  const res = await fetch(`${API_BASE}/dashboard/summary`);
-  if (!res.ok) throw new Error('Failed to fetch dashboard summary');
-  return res.json();
+  return getJSON<DashboardSummary>(`/dashboard/summary`);
 }
 
-export async function fetchRiskDistribution(): Promise<Record<string, number>> {
-  const res = await fetch(`${API_BASE}/risk/distribution`);
-  if (!res.ok) throw new Error('Failed to fetch risk distribution');
-  return res.json();
+export async function fetchRiskDistribution(): Promise<RiskDistribution> {
+  return getJSON<RiskDistribution>(`/risk/distribution`);
 }
 
-export async function fetchRiskBySector(): Promise<Record<string, Record<string, number>>> {
-  const res = await fetch(`${API_BASE}/risk/by-sector`);
-  if (!res.ok) throw new Error('Failed to fetch risk by sector');
-  return res.json();
+export async function fetchRiskBySector(): Promise<RiskBySector> {
+  return getJSON<RiskBySector>(`/risk/by-sector`);
 }

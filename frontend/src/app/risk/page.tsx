@@ -1,97 +1,135 @@
 import { fetchRiskDistribution, fetchRiskBySector } from "@/lib/api";
+import { Reveal, StaggerGroup, StaggerItem } from "@/components/Reveal";
+import { AnimatedNumber } from "@/components/AnimatedNo";
+import { RiskBandBadge, RISK_BAND_META, type RiskBand } from "@/components/StatusBadge";
+import { IconAlertTriangle, IconGauge } from "@/components/Icons";
 
-const BAND_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"] as const;
-const BAND_COLOR: Record<string, string> = {
-  CRITICAL: "bg-red-500",
-  HIGH: "bg-orange-500",
-  MEDIUM: "bg-yellow-500",
-  LOW: "bg-green-500",
-};
-const BAND_EMOJI: Record<string, string> = {
-  CRITICAL: "🔴",
-  HIGH: "🟠",
-  MEDIUM: "🟡",
-  LOW: "🟢",
-};
-const BAND_TEXT_COLOR: Record<string, string> = {
-  CRITICAL: "text-red-600",
-  HIGH: "text-orange-600",
-  MEDIUM: "text-yellow-600",
-  LOW: "text-green-600",
-};
+const BAND_ORDER: RiskBand[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+const MIN_SECTOR_SIZE = 3;
 
 export default async function RiskPage() {
   let distribution: Record<string, number> = {};
   let bySector: Record<string, Record<string, number>> = {};
-  let error: string | null = null;
-
+  let reachable = true;
   try {
-    [distribution, bySector] = await Promise.all([
-      fetchRiskDistribution(),
-      fetchRiskBySector(),
-    ]);
-  } catch (e) {
-    error = "Couldn't reach the backend — start it and reload.";
+    [distribution, bySector] = await Promise.all([fetchRiskDistribution(), fetchRiskBySector()]);
+  } catch {
+    reachable = false;
   }
+
+  if (!reachable) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-24 text-center sm:px-6 lg:px-8">
+        <IconAlertTriangle className="mx-auto h-10 w-10 text-signal-amber" />
+        <h1 className="mt-4 font-display text-2xl font-semibold text-ink">Can&apos;t reach the backend</h1>
+        <p className="mt-2 text-ink-soft">
+          Risk signals come from the FastAPI service at{" "}
+          <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-sm">/api/v1</code>. Confirm
+          it&apos;s running, then reload.
+        </p>
+      </div>
+    );
+  }
+
+  const totalScored = BAND_ORDER.reduce((sum, band) => sum + (distribution[band] ?? 0), 0) || 1;
 
   const sectorRows = Object.entries(bySector)
     .map(([sector, counts]) => ({
       sector,
       counts,
       total: Object.values(counts).reduce((a, b) => a + b, 0),
+      criticalPlusHigh: (counts.CRITICAL ?? 0) + (counts.HIGH ?? 0),
     }))
-    .sort((a, b) => b.total - a.total)
+    .filter((s) => s.total >= MIN_SECTOR_SIZE)
+    .sort((a, b) => b.criticalPlusHigh / b.total - a.criticalPlusHigh / a.total)
     .slice(0, 10);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-12 space-y-8 animate-fade-in">
-      <h1 className="text-3xl font-bold text-slate-800">Risk Signals &amp; Analytics</h1>
+    <div className="mx-auto max-w-7xl space-y-10 px-4 py-12 sm:px-6 lg:px-8">
+      <Reveal>
+        <span className="text-xs font-semibold uppercase tracking-wider text-brand-blue">Risk Signals</span>
+        <h1 className="mt-1 font-display text-3xl font-semibold text-ink">Where risk sits today</h1>
+        <p className="mt-2 max-w-2xl text-ink-soft">
+          Every scored project gets a blended delay + cost risk score, banded LOW to CRITICAL. See{" "}
+          <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-xs">services/risk_engine.py</code>{" "}
+          for exactly how each score is built — every number traces back to a specific field on the
+          project, not a black box.
+        </p>
+      </Reveal>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
-          {error}
-        </div>
-      )}
+      <StaggerGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {BAND_ORDER.map((band) => {
+          const meta = RISK_BAND_META[band];
+          const count = distribution[band] ?? 0;
+          return (
+            <StaggerItem key={band}>
+              <div className="rounded-xl border border-line bg-surface p-6 shadow-card">
+                <IconGauge className={`h-6 w-6 ${meta.text}`} />
+                <p className="mt-3 text-sm font-medium text-ink-soft">{meta.label}</p>
+                <p className={`tabular mt-1 font-display text-3xl font-semibold ${meta.text}`}>
+                  <AnimatedNumber value={count} />
+                </p>
+                <p className="tabular mt-0.5 text-xs text-ink-faint">
+                  {((count / totalScored) * 100).toFixed(1)}% of scored projects
+                </p>
+              </div>
+            </StaggerItem>
+          );
+        })}
+      </StaggerGroup>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {BAND_ORDER.map((band) => (
-          <div key={band} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 text-center">
-            <div className="text-5xl mb-4">{BAND_EMOJI[band]}</div>
-            <h3 className="text-xl font-bold text-gray-900">{band.charAt(0) + band.slice(1).toLowerCase()}</h3>
-            <p className={`text-3xl font-bold mt-2 ${BAND_TEXT_COLOR[band]}`}>{distribution[band] ?? 0}</p>
-            <p className="text-sm text-gray-500">projects</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-        <h3 className="text-lg font-semibold mb-6">Risk Distribution by Sector</h3>
-        <div className="space-y-4">
-          {sectorRows.map(({ sector, counts, total }) => (
-            <div key={sector} className="flex items-center space-x-4">
-              <span className="w-56 truncate text-sm font-medium text-gray-700" title={sector}>{sector}</span>
-              <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden flex">
+      <Reveal delay={0.05} className="rounded-xl border border-line bg-surface p-6 shadow-card">
+        <h3 className="font-display text-lg font-semibold text-ink">Risk distribution by sector</h3>
+        <p className="mt-1 text-sm text-ink-faint">
+          Share of each sector&apos;s scored projects in CRITICAL or HIGH. Sectors with fewer than{" "}
+          {MIN_SECTOR_SIZE} scored projects are left out to avoid noisy single-project rates.
+        </p>
+        <div className="mt-6 flex flex-col gap-4">
+          {sectorRows.length === 0 && (
+            <p className="py-4 text-center text-sm text-ink-faint">Not enough scored projects yet.</p>
+          )}
+          {sectorRows.map((row) => (
+            <div key={row.sector}>
+              <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
+                <span className="truncate font-medium text-ink" title={row.sector}>
+                  {row.sector}
+                </span>
+                <span className="tabular flex-shrink-0 text-ink-faint">{row.total} scored</span>
+              </div>
+              <div className="flex h-2 w-full overflow-hidden rounded-full bg-line">
                 {BAND_ORDER.map((band) => {
-                  const count = counts[band] ?? 0;
-                  const pct = total > 0 ? (count / total) * 100 : 0;
-                  return pct > 0 ? (
-                    <div key={band} className={`h-full ${BAND_COLOR[band]}`} style={{ width: `${pct}%` }} title={`${band}: ${count}`} />
-                  ) : null;
+                  const count = row.counts[band] ?? 0;
+                  const pct = (count / row.total) * 100;
+                  if (pct <= 0) return null;
+                  return (
+                    <div
+                      key={band}
+                      style={{ width: `${pct}%` }}
+                      title={`${RISK_BAND_META[band].label}: ${count}`}
+                      className={
+                        band === "CRITICAL"
+                          ? "bg-signal-red"
+                          : band === "HIGH"
+                            ? "bg-signal-red/60"
+                            : band === "MEDIUM"
+                              ? "bg-signal-amber"
+                              : "bg-signal-green"
+                      }
+                    />
+                  );
                 })}
               </div>
-              <span className="w-10 text-right text-xs text-gray-400">{total}</span>
             </div>
           ))}
         </div>
-        <div className="flex justify-center space-x-6 mt-6 text-xs">
+        <div className="mt-6 flex flex-wrap gap-4 border-t border-line pt-4">
           {BAND_ORDER.map((band) => (
-            <div key={band} className="flex items-center">
-              <div className={`w-3 h-3 rounded-full mr-2 ${BAND_COLOR[band]}`}></div>
-              {band.charAt(0) + band.slice(1).toLowerCase()}
+            <div key={band} className="flex items-center gap-1.5 text-xs text-ink-soft">
+              <RiskBandBadge band={band} />
             </div>
           ))}
         </div>
-      </div>
+      </Reveal>
     </div>
   );
 }

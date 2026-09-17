@@ -1,27 +1,30 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
+import { IconLayers } from "@/components/Icons";
 
 export const metadata: Metadata = {
-  title: "Nirman Drishti - Next-Gen Project Infrastructure Insights",
-  description: "Predictive Monitoring for High-Value Central Sector Infrastructure Projects",
+  title: "Nirman Drishti — Infrastructure Project Insights",
+  description:
+    "Predictive monitoring for high-value Central Sector infrastructure projects (₹150 Cr and above).",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="bg-gray-50 text-gray-900 antialiased">
+      <body className="bg-paper font-sans text-ink antialiased">
         <Navbar />
-        <main className="pt-16 min-h-screen">
-          {children}
-        </main>
-        <footer className="bg-slate-900 text-white py-8 mt-20">
-          <div className="max-w-7xl mx-auto px-4 text-center">
-            <p className="text-gray-400">© 2026 Nirman Drishti. Government of India Initiative.</p>
+        <main className="min-h-screen pt-16">{children}</main>
+        <footer className="border-t border-line bg-surface">
+          <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-10 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+            <div className="flex items-center gap-2.5 text-ink-soft">
+              <IconLayers className="h-5 w-5 text-brand-blue" />
+              <span className="font-display text-base text-ink">Nirman Drishti</span>
+              <span className="text-sm">— built by team Parallax for SIH 26103</span>
+            </div>
+            <p className="text-sm text-ink-faint">
+              Tracking Central Sector infrastructure projects sanctioned at ₹150 Cr and above.
+            </p>
           </div>
         </footer>
       </body>

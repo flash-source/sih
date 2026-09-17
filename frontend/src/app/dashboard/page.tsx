@@ -1,102 +1,177 @@
-import { fetchDashboardSummary } from "@/lib/api";
+import type { ComponentType, SVGProps } from "react";
+import { fetchDashboardSummary, fetchProjects, FULL_PORTFOLIO_LIMIT } from "@/lib/api";
+import { Reveal, StaggerGroup, StaggerItem } from "@/components/Reveal";
+import { AnimatedNumber } from "@/components/AnimatedNo";
+import { AnimatedBar } from "@/components/AnimatedBar";
+import { DashboardBreakdown } from "@/components/Dashboard";
+import { PROJECT_STATUS_META, RiskBandBadge, type ProjectStatus } from "@/components/StatusBadge";
+import { IconAlertTriangle, IconRupee, IconLayers, IconGauge } from "@/components/Icons";
+
+const STATUS_ORDER: ProjectStatus[] = ["IN_PROGRESS", "DELAYED", "PLANNING", "COMPLETED"];
 
 export default async function DashboardPage() {
-  let summary;
+  let summary: Awaited<ReturnType<typeof fetchDashboardSummary>> | null = null;
+  let projects: Awaited<ReturnType<typeof fetchProjects>> = [];
+  let reachable = true;
   try {
-    summary = await fetchDashboardSummary();
-  } catch (error) {
-    summary = {
-      total_projects: 1775,
-      total_cost: 450000,
-      avg_risk_score: 42.5,
-      projects_by_status: { PLANNING: 120, IN_PROGRESS: 850, DELAYED: 305, COMPLETED: 500 },
-      critical_projects: []
-    };
+    [summary, projects] = await Promise.all([
+      fetchDashboardSummary(),
+      fetchProjects({ limit: FULL_PORTFOLIO_LIMIT }),
+    ]);
+  } catch {
+    reachable = false;
   }
 
-  return (
-    <div className="max-w-7xl mx-auto px-4 py-12 space-y-8 animate-fade-in">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-slate-800">Dashboard Overview</h1>
-        <div className="flex space-x-2">
-          <button className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50 transition">Ministry-Wise</button>
-          <button className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition">Sector-Wise</button>
-        </div>
+  if (!reachable || !summary) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-24 text-center sm:px-6 lg:px-8">
+        <IconAlertTriangle className="mx-auto h-10 w-10 text-signal-amber" />
+        <h1 className="mt-4 font-display text-2xl font-semibold text-ink">Can&apos;t reach the backend</h1>
+        <p className="mt-2 text-ink-soft">
+          The dashboard reads from the FastAPI service at{" "}
+          <code className="rounded bg-navy-50 px-1.5 py-0.5 font-mono text-sm">/api/v1</code>. Confirm
+          it&apos;s running (see <code className="font-mono">backend/README.md</code>), then reload.
+        </p>
       </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-all duration-300">
-          <p className="text-sm text-gray-500 mb-1 font-medium">Total Projects</p>
-          <p className="text-4xl font-bold text-blue-600">{summary.total_projects}</p>
-          <div className="mt-4 h-1 bg-blue-100 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 w-3/4 animate-pulse"></div>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-all duration-300">
-          <p className="text-sm text-gray-500 mb-1 font-medium">Total Cost (Cr)</p>
-          <p className="text-4xl font-bold text-green-600">₹{summary.total_cost.toLocaleString()}</p>
-          <div className="mt-4 h-1 bg-green-100 rounded-full overflow-hidden">
-            <div className="h-full bg-green-500 w-1/2"></div>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-all duration-300">
-          <p className="text-sm text-gray-500 mb-1 font-medium">Avg Risk Score</p>
-          <p className="text-4xl font-bold text-red-600">{summary.avg_risk_score.toFixed(1)}</p>
-          <div className="mt-4 h-1 bg-red-100 rounded-full overflow-hidden">
-            <div className="h-full bg-red-500 w-2/5"></div>
-          </div>
-        </div>
-      </div>
+    );
+  }
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <h3 className="text-lg font-semibold mb-6 text-slate-700">Projects by Status</h3>
-          <div className="space-y-4">
-            {Object.entries(summary.projects_by_status).map(([status, count]) => (
-              <div key={status} className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-600 uppercase tracking-wide">{status.replace('_', ' ')}</span>
-                <div className="flex items-center space-x-3">
-                  <div className="w-32 h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full rounded-full ${
-                        status === 'COMPLETED' ? 'bg-green-500' : 
-                        status === 'IN_PROGRESS' ? 'bg-blue-500' : 
-                        status === 'DELAYED' ? 'bg-red-500' : 'bg-gray-400'
-                      }`}
-                      style={{width: `${(count / summary.total_projects) * 100}%`}}
-                    ></div>
+  const totalForBars =
+    Object.values(summary.projects_by_status).reduce((a, b) => a + b, 0) || summary.total_projects || 1;
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-10 px-4 py-12 sm:px-6 lg:px-8">
+      <Reveal>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-brand-blue">Dashboard</span>
+            <h1 className="mt-1 font-display text-3xl font-semibold text-ink">Portfolio overview</h1>
+          </div>
+          <p className="text-sm text-ink-faint">
+            {summary.total_projects.toLocaleString("en-IN")} projects loaded
+          </p>
+        </div>
+      </Reveal>
+
+      <StaggerGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StaggerItem>
+          <StatCard icon={IconLayers} label="Total projects" value={summary.total_projects} />
+        </StaggerItem>
+        <StaggerItem>
+          <StatCard
+            icon={IconRupee}
+            label="Combined sanctioned cost"
+            value={summary.total_cost}
+            prefix="₹"
+            suffix=" Cr"
+            tone="text-signal-green"
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <StatCard
+            icon={IconAlertTriangle}
+            label="Delayed projects"
+            value={summary.projects_by_status.DELAYED ?? 0}
+            tone="text-signal-red"
+          />
+        </StaggerItem>
+        <StaggerItem>
+          <StatCard
+            icon={IconGauge}
+            label="Average risk score"
+            value={summary.avg_risk_score}
+            suffix=" / 100"
+            decimals={1}
+            tone="text-brand-blue"
+          />
+        </StaggerItem>
+      </StaggerGroup>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Reveal className="rounded-xl border border-line bg-surface p-6 shadow-card">
+          <h3 className="font-display text-lg font-semibold text-ink">Projects by status</h3>
+          <div className="mt-6 flex flex-col gap-4">
+            {STATUS_ORDER.map((status) => {
+              const count = summary.projects_by_status[status] ?? 0;
+              const meta = PROJECT_STATUS_META[status];
+              return (
+                <div key={status}>
+                  <div className="mb-1.5 flex items-center justify-between text-sm">
+                    <span className="font-medium text-ink">{meta.label}</span>
+                    <span className="tabular text-ink-faint">{count.toLocaleString("en-IN")}</span>
                   </div>
-                  <span className="text-lg font-bold text-gray-800 w-12 text-right">{count}</span>
+                  <AnimatedBar pct={(count / totalForBars) * 100} fillClassName={meta.bar} />
+                </div>
+              );
+            })}
+          </div>
+        </Reveal>
+
+        <Reveal delay={0.05} className="rounded-xl border border-line bg-surface p-6 shadow-card">
+          <h3 className="font-display text-lg font-semibold text-ink">Needs attention</h3>
+          <p className="mt-1 text-sm text-ink-faint">Projects scored CRITICAL, ranked by risk score.</p>
+          <div className="mt-5 flex flex-col">
+            {summary.critical_projects.length === 0 && (
+              <p className="py-6 text-center text-sm text-ink-faint">No CRITICAL-band projects right now.</p>
+            )}
+            {summary.critical_projects.slice(0, 6).map((p) => (
+              <div
+                key={p.id}
+                className="flex items-center justify-between gap-3 border-b border-line py-3 last:border-none"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-ink">{p.name}</p>
+                  <p className="truncate text-xs text-ink-faint">
+                    {p.ministry} · {p.state}
+                  </p>
+                </div>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <span className="tabular text-sm font-medium text-ink-soft">
+                    ₹{Number(p.total_cost).toLocaleString("en-IN")} Cr
+                  </span>
+                  {p.risk_band && <RiskBandBadge band={p.risk_band} />}
                 </div>
               </div>
             ))}
           </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <h3 className="text-lg font-semibold mb-6 text-slate-700">High-Risk Lineup (Rs. 500 cr.+)</h3>
-          <div className="space-y-3">
-            <div className="p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg hover:bg-red-100 transition cursor-pointer">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h4 className="font-bold text-red-900">Project Alpha - Rail Corridor</h4>
-                  <p className="text-sm text-red-700">Severe Delays Detected</p>
-                </div>
-                <span className="px-2 py-1 bg-red-200 text-red-800 text-xs font-bold rounded">CRITICAL</span>
-              </div>
-            </div>
-            <div className="p-4 bg-orange-50 border-l-4 border-orange-500 rounded-r-lg hover:bg-orange-100 transition cursor-pointer">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h4 className="font-bold text-orange-900">Project Beta - Power Grid</h4>
-                  <p className="text-sm text-orange-700">Material Shortage</p>
-                </div>
-                <span className="px-2 py-1 bg-orange-200 text-orange-800 text-xs font-bold rounded">HIGH</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        </Reveal>
       </div>
+
+      <Reveal delay={0.1}>
+        <DashboardBreakdown projects={projects} />
+      </Reveal>
+    </div>
+  );
+}
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  prefix = "",
+  suffix = "",
+  tone = "text-ink",
+  decimals = 0,
+}: {
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
+  label: string;
+  value: number;
+  prefix?: string;
+  suffix?: string;
+  tone?: string;
+  decimals?: number;
+}) {
+  return (
+    <div className="rounded-xl border border-line bg-surface p-5 shadow-card">
+      <div className="flex items-center gap-2 text-ink-faint">
+        <Icon className="h-4 w-4" />
+        <p className="text-xs font-medium uppercase tracking-wide">{label}</p>
+      </div>
+      <p className={`tabular mt-3 font-display text-2xl font-semibold ${tone}`}>
+        {prefix}
+        <AnimatedNumber value={value} decimals={decimals} />
+        {suffix}
+      </p>
     </div>
   );
 }
