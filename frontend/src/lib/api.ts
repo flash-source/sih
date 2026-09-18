@@ -1,4 +1,4 @@
-import { Project, RiskScore, DashboardSummary, RiskDistribution, RiskBySector } from "./types";
+import { Project, RiskScore, DashboardSummary, RiskDistribution, RiskBySector, BacktestReport } from "./types";
 
 const API_BASE =
   typeof window === "undefined"
@@ -44,4 +44,8 @@ export async function fetchRiskDistribution(): Promise<RiskDistribution> {
 
 export async function fetchRiskBySector(): Promise<RiskBySector> {
   return getJSON<RiskBySector>(`/risk/by-sector`);
+}
+
+export async function fetchBacktest(): Promise<BacktestReport> {
+  return getJSON<BacktestReport>(`/model/backtest`, 60);
 }

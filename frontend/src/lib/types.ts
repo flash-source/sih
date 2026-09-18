@@ -15,8 +15,6 @@ export interface Project {
   original_commissioning_date?: string;
   revised_commissioning_date?: string;
   created_at: string;
-  // Left-joined from RiskScore by GET /projects -- present once
-  // /predict-risk has run for a project, undefined until then.
   blended_risk_score?: number;
   risk_band?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 }
@@ -40,3 +38,53 @@ export interface DashboardSummary {
 
 export type RiskDistribution = Record<string, number>;
 export type RiskBySector = Record<string, Record<string, number>>;
+
+export interface ConfusionMatrix {
+  tp: number;
+  fp: number;
+  tn: number;
+  fn: number;
+}
+
+export interface RocPoint {
+  fpr: number;
+  tpr: number;
+}
+
+export interface BandCount {
+  band: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  predicted: number;
+  actual: number;
+}
+
+export interface SectorAccuracy {
+  sector: string;
+  accuracy: number;
+  n: number;
+}
+
+export interface ProbBin {
+  bin: string;
+  delayed: number;
+  on_track: number;
+}
+
+export interface BacktestReport {
+  train_snapshot: string;
+  test_snapshot: string;
+  model: string;
+  n_train: number;
+  n_test: number;
+  accuracy: number;
+  precision: number;
+  recall: number;
+  f1: number;
+  roc_auc: number;
+  threshold: number;
+  confusion: ConfusionMatrix;
+  roc: RocPoint[];
+  bands: BandCount[];
+  by_sector: SectorAccuracy[];
+  prob_bins: ProbBin[];
+  notes: string;
+}

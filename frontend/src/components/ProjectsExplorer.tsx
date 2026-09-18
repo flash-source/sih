@@ -11,19 +11,35 @@ const RISK_FILTERS: Array<RiskBand | "ALL"> = ["ALL", "CRITICAL", "HIGH", "MEDIU
 const PAGE_SIZE = 25;
 type SortKey = "name" | "total_cost" | "progress_percent" | "blended_risk_score";
 
+const SELECT_CLS =
+  "rounded-md border border-line bg-surface py-2 pl-3 pr-8 text-sm text-ink outline-none transition-shadow focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20";
+
 export function ProjectsExplorer({ projects }: { projects: Project[] }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<ProjectStatus | "ALL">("ALL");
   const [risk, setRisk] = useState<RiskBand | "ALL">("ALL");
+  const [ministry, setMinistry] = useState<string>("ALL");
+  const [state, setState] = useState<string>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("total_cost");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(0);
+
+  const ministries = useMemo(
+    () => Array.from(new Set(projects.map((p) => p.ministry).filter(Boolean))).sort(),
+    [projects]
+  );
+  const states = useMemo(
+    () => Array.from(new Set(projects.map((p) => p.state).filter(Boolean))).sort(),
+    [projects]
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let rows = projects;
     if (status !== "ALL") rows = rows.filter((p) => p.status === status);
     if (risk !== "ALL") rows = rows.filter((p) => (p.risk_band ?? "UNKNOWN") === risk);
+    if (ministry !== "ALL") rows = rows.filter((p) => p.ministry === ministry);
+    if (state !== "ALL") rows = rows.filter((p) => p.state === state);
     if (q) {
       rows = rows.filter(
         (p) =>
@@ -42,12 +58,13 @@ export function ProjectsExplorer({ projects }: { projects: Project[] }) {
           : Number(av) - Number(bv);
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [projects, query, status, risk, sortKey, sortDir]);
+  }, [projects, query, status, risk, ministry, state, sortKey, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const clampedPage = Math.min(page, pageCount - 1);
   const pageRows = filtered.slice(clampedPage * PAGE_SIZE, clampedPage * PAGE_SIZE + PAGE_SIZE);
-  const rowsKey = `${status}-${risk}-${query}-${sortKey}-${sortDir}-${clampedPage}`;
+  const rowsKey = `${status}-${risk}-${ministry}-${state}-${query}-${sortKey}-${sortDir}-${clampedPage}`;
+  const hasActiveFilter = ministry !== "ALL" || state !== "ALL" || status !== "ALL" || risk !== "ALL" || query !== "";
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -66,10 +83,20 @@ export function ProjectsExplorer({ projects }: { projects: Project[] }) {
     };
   }
 
+  function clearFilters() {
+    setQuery("");
+    setStatus("ALL");
+    setRisk("ALL");
+    setMinistry("ALL");
+    setState("ALL");
+    setPage(0);
+  }
+
   return (
     <div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-xs">
+      {/* Row 1 — search + dropdown selectors */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative w-full lg:max-w-xs">
           <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
           <input
             value={query}
@@ -78,8 +105,41 @@ export function ProjectsExplorer({ projects }: { projects: Project[] }) {
             className="w-full rounded-md border border-line bg-surface py-2 pl-9 pr-3 text-sm text-ink outline-none transition-shadow focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20"
           />
         </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-ink-faint">
+            Ministry
+            <select value={ministry} onChange={(e) => resetPage(setMinistry)(e.target.value)} className={SELECT_CLS}>
+              <option value="ALL">All ministries</option>
+              {ministries.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-ink-faint">
+            State
+            <select value={state} onChange={(e) => resetPage(setState)(e.target.value)} className={SELECT_CLS}>
+              <option value="ALL">All states</option>
+              {states.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          {hasActiveFilter && (
+            <button
+              onClick={clearFilters}
+              className="rounded-md border border-line px-3 py-2 text-xs font-medium text-ink-soft transition-colors hover:text-brand-blue"
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* Row 2 — status + risk chips */}
       <div className="mt-3 flex flex-col gap-2">
         <div className="flex flex-wrap gap-1.5">
           {STATUS_FILTERS.map((s) => (
@@ -173,7 +233,7 @@ export function ProjectsExplorer({ projects }: { projects: Project[] }) {
             {pageRows.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-ink-faint">
-                  No projects match that search.
+                  No projects match those filters.
                 </td>
               </tr>
             )}
@@ -213,7 +273,7 @@ export function ProjectsExplorer({ projects }: { projects: Project[] }) {
         ))}
         {pageRows.length === 0 && (
           <p className="rounded-xl border border-line bg-surface px-4 py-10 text-center text-sm text-ink-faint">
-            No projects match that search.
+            No projects match those filters.
           </p>
         )}
       </div>
