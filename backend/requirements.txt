@@ -7,4 +7,5 @@ pydantic
 pydantic-settings
 joblib
 scikit-learn
+pandas
 python-dotenv

@@ -1,8 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from typing import Optional
+
 from app.database import get_db
 from app import models, schemas
+from app.services import ml as ml_service
+from app.services.features import build_feature_row
 from app.services.risk_engine import compute_risk
 
 router = APIRouter()
@@ -17,16 +21,55 @@ def _to_project_out(project: models.Project, risk: models.RiskScore | None) -> s
 
 
 @router.get("/projects", response_model=list[schemas.ProjectOut])
-def get_projects(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    rows = (
+def get_projects(
+    skip: int = 0,
+    limit: int = Query(100, le=5000),
+    ministry: Optional[str] = None,
+    state: Optional[str] = None,
+    sector: Optional[str] = None,
+    status: Optional[str] = None,
+    risk_band: Optional[str] = None,
+    q: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Filtered project list. All filters optional; combine freely."""
+    query = (
         db.query(models.Project, models.RiskScore)
         .outerjoin(models.RiskScore, models.RiskScore.project_id == models.Project.id)
-        .order_by(models.Project.id)
-        .offset(skip)
-        .limit(limit)
-        .all()
     )
+    if ministry:
+        query = query.filter(models.Project.ministry == ministry)
+    if state:
+        query = query.filter(models.Project.state == state)
+    if sector:
+        query = query.filter(models.Project.sector == sector)
+    if status:
+        query = query.filter(models.Project.status == status)
+    if risk_band:
+        query = query.filter(models.RiskScore.risk_band == risk_band)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            (models.Project.name.ilike(like))
+            | (models.Project.project_code.ilike(like))
+        )
+    rows = query.order_by(models.Project.id).offset(skip).limit(limit).all()
     return [_to_project_out(project, risk) for project, risk in rows]
+
+
+@router.get("/filters/meta")
+def filters_meta(db: Session = Depends(get_db)):
+    """Distinct values for dropdown selectors, pre-sorted."""
+    def distinct(col):
+        return sorted({r[0] for r in db.query(col).distinct() if r[0]})
+
+    return {
+        "ministries": distinct(models.Project.ministry),
+        "states": distinct(models.Project.state),
+        "sectors": distinct(models.Project.sector),
+        "statuses": ["PLANNING", "IN_PROGRESS", "DELAYED", "COMPLETED"],
+        "risk_bands": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+    }
 
 
 @router.get("/projects/{project_id}", response_model=schemas.ProjectOut)
@@ -40,33 +83,61 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
 
 @router.post("/predict-risk", response_model=schemas.RiskScoreOut)
 def predict_project_risk(project_id: int, db: Session = Depends(get_db)):
+    """ML-first scoring with a transparent rule-engine fallback.
+
+    Uses the trained logistic-regression pipelines when available; otherwise
+    falls back to the rule-based scorer so the endpoint never breaks.
+    """
     project = db.query(models.Project).filter(models.Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    result = compute_risk(
-        original_cost=project.original_cost,
-        revised_cost=project.revised_cost,
-        cumulative_expenditure=project.cumulative_expenditure,
-        physical_progress_pct=project.progress_percent,
-        original_commissioning_date=project.original_commissioning_date,
-        revised_commissioning_date=project.revised_commissioning_date,
-        sanction_date=project.sanction_date,
+    ml_pred = ml_service.predict_risk(
+        build_feature_row(
+            original_cost=project.original_cost,
+            revised_cost=project.revised_cost,
+            cumulative_expenditure=project.cumulative_expenditure,
+            progress_percent=project.progress_percent,
+            original_commissioning_date=project.original_commissioning_date,
+            revised_commissioning_date=project.revised_commissioning_date,
+            sanction_date=project.sanction_date,
+            sector=project.sector,
+        )
     )
+
+    if ml_pred.get("model_used") == "retrained":
+        cost_prob = ml_pred["cost_p"]
+        delay_prob = ml_pred["delay_p"]
+        blended = ml_pred["blended"]
+        band = ml_pred["band"]
+    else:
+        result = compute_risk(
+            original_cost=project.original_cost,
+            revised_cost=project.revised_cost,
+            cumulative_expenditure=project.cumulative_expenditure,
+            physical_progress_pct=project.progress_percent,
+            original_commissioning_date=project.original_commissioning_date,
+            revised_commissioning_date=project.revised_commissioning_date,
+            sanction_date=project.sanction_date,
+        )
+        cost_prob = result.budget_score / 100
+        delay_prob = result.delay_score / 100
+        blended = result.blended_score
+        band = result.risk_band
 
     risk_row = db.query(models.RiskScore).filter(models.RiskScore.project_id == project_id).first()
     if risk_row:
-        risk_row.cost_overrun_prob = result.budget_score / 100
-        risk_row.delay_prob = result.delay_score / 100
-        risk_row.blended_risk_score = result.blended_score
-        risk_row.risk_band = result.risk_band
+        risk_row.cost_overrun_prob = cost_prob
+        risk_row.delay_prob = delay_prob
+        risk_row.blended_risk_score = blended
+        risk_row.risk_band = band
     else:
         risk_row = models.RiskScore(
             project_id=project_id,
-            cost_overrun_prob=result.budget_score / 100,
-            delay_prob=result.delay_score / 100,
-            blended_risk_score=result.blended_score,
-            risk_band=result.risk_band,
+            cost_overrun_prob=cost_prob,
+            delay_prob=delay_prob,
+            blended_risk_score=blended,
+            risk_band=band,
         )
         db.add(risk_row)
     db.commit()

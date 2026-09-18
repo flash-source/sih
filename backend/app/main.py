@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
+from app.api import backtest
 from app.database import engine, Base
 from app.services.ml import load_models
 import os
@@ -8,6 +9,7 @@ import os
 app = FastAPI(title="SIH 26103 Backend")
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "*").split(","), allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(router, prefix="/api/v1")
+app.include_router(backtest.router, prefix="/api/v1")
 
 @app.on_event("startup")
 async def startup():

@@ -1,93 +1,95 @@
-# backend/app/services/ml.py
-import joblib
-import os
+"""Loads trained .pkl pipelines at startup and serves real predictions.
+
+Model files are produced by ml/training/train_models.py:
+    backend/models/delay_model.pkl   (label: slip > 6 months)
+    backend/models/cost_model.pkl    (label: escalation > 20%)
+
+Each pickle is a full sklearn Pipeline (impute + scale + one-hot + logistic
+regression), fitted on the FEATURE_COLUMNS from app/services/features.py, so
+serving only needs to assemble a one-row DataFrame with those columns.
+
+If no models are found, predict_risk reports model_used="none" and callers
+(the /predict-risk route) fall back to the transparent rule engine.
+"""
 import logging
+import os
 from pathlib import Path
+
+import joblib
+import pandas as pd
+
+from app.services.features import FEATURE_COLUMNS
 
 logger = logging.getLogger(__name__)
 
-# Default paths (can be overridden by .env)
-COST_MODEL_PATH = os.getenv("COST_MODEL_PATH", "models/cost_model.pkl")
-DELAY_MODEL_PATH = os.getenv("DELAY_MODEL_PATH", "models/delay_model.pkl")
+_BACKEND_DIR = Path(__file__).resolve().parents[2]          # .../backend
+_REPO_ROOT = _BACKEND_DIR.parent
+DEFAULT_MODEL_DIR = _BACKEND_DIR / "models"
+ALT_MODEL_DIR = _REPO_ROOT / "ml" / "models"
 
-# Fallback paths for Day-1 Demo (R3's pre-trained models)
-DEMO_COST_MODEL_PATH = "models/demo/cost_model.pkl"
-DEMO_DELAY_MODEL_PATH = "models/demo/delay_model.pkl"
 
-cost_model = None
+def _resolve(name: str):
+    env = os.getenv(f"{name.upper()}_MODEL_PATH")  # DELAY_MODEL_PATH / COST_MODEL_PATH
+    candidates = [Path(env)] if env else []
+    candidates += [DEFAULT_MODEL_DIR / f"{name}_model.pkl", ALT_MODEL_DIR / f"{name}_model.pkl"]
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
+
+
 delay_model = None
-active_model_type = "none" # 'retrained' or 'demo'
+cost_model = None
+active_model_type = "none"  # "retrained" when both pipelines loaded
+
 
 def load_models():
-    """Loads models at startup. Prioritizes retrained XGBoost, falls back to R3 demo RF."""
-    global cost_model, delay_model, active_model_type
-    
-    # 1. Try loading the Retrained Models (R2 Pipeline)
-    if os.path.exists(COST_MODEL_PATH) and os.path.exists(DELAY_MODEL_PATH):
+    global delay_model, cost_model, active_model_type
+    delay_path, cost_path = _resolve("delay"), _resolve("cost")
+    if delay_path and cost_path:
         try:
-            cost_model = joblib.load(COST_MODEL_PATH)
-            delay_model = joblib.load(DELAY_MODEL_PATH)
+            delay_model = joblib.load(delay_path)
+            cost_model = joblib.load(cost_path)
             active_model_type = "retrained"
-            logger.info(f"✅ Successfully loaded retrained models from {COST_MODEL_PATH}")
+            logger.info("Loaded trained models: %s, %s", delay_path, cost_path)
             return
         except Exception as e:
-            logger.error(f"⚠️ Failed to load retrained models: {e}")
+            logger.error("Failed to load model pipelines: %s", e)
+    delay_model = cost_model = None
+    active_model_type = "none"
+    logger.warning("No trained models found -- /predict-risk will use the rule engine.")
 
-    # 2. Fallback to R3 Demo Models
-    if os.path.exists(DEMO_COST_MODEL_PATH) and os.path.exists(DEMO_DELAY_MODEL_PATH):
-        try:
-            cost_model = joblib.load(DEMO_COST_MODEL_PATH)
-            delay_model = joblib.load(DEMO_DELAY_MODEL_PATH)
-            active_model_type = "demo"
-            logger.warning(f"⚠️ Loaded fallback DEMO models (RandomForest). Retrain for production.")
-            return
-        except Exception as e:
-            logger.error(f"⚠️ Failed to load demo models: {e}")
 
-    logger.critical("❌ NO MODELS FOUND. Prediction endpoints will return dummy data.")
+def _band(blended: float) -> str:
+    if blended >= 75:
+        return "CRITICAL"
+    if blended >= 50:
+        return "HIGH"
+    if blended >= 25:
+        return "MEDIUM"
+    return "LOW"
 
-def predict_risk(features: dict):
+
+def predict_risk(features_row: dict) -> dict:
+    """Predict from a feature row built by features.build_feature_row().
+
+    Returns model_used="none" when models are absent -- never fake numbers.
     """
-    Predicts risk using the loaded models. 
-    If no models are loaded, returns a safe fallback.
-    """
-    if not cost_model or not delay_model:
-        return {
-            "cost_p": 0.5, 
-            "delay_p": 0.5, 
-            "blended": 50.0, 
-            "band": "UNKNOWN",
-            "model_used": "none"
-        }
+    if not delay_model or not cost_model:
+        return {"model_used": "none"}
 
-    # Note: In a real scenario, you must ensure 'features' matches the exact 
-    # column names the model was trained on (from R2's features.py).
-    # For the scaffold, we pass a dummy array or the dict values.
-    
     try:
-        # Placeholder: Replace with actual feature vector creation based on active_model_type
-        # X = create_feature_vector(features, active_model_type)
-        
-        # Dummy prediction logic for scaffold
-        cost_p = 0.65 if active_model_type == "retrained" else 0.45
-        delay_p = 0.55 if active_model_type == "retrained" else 0.35
-        
-        # R3 Blended Score Logic: risk = (cost_p + delay_p) * 50
-        blended = (cost_p + delay_p) * 50 
-        
-        # Banding
-        if blended >= 75: band = "CRITICAL"
-        elif blended >= 50: band = "HIGH"
-        elif blended >= 25: band = "MEDIUM"
-        else: band = "LOW"
-
+        X = pd.DataFrame([{c: features_row.get(c, 0.0) for c in FEATURE_COLUMNS}])
+        cost_p = float(cost_model.predict_proba(X)[:, 1][0])
+        delay_p = float(delay_model.predict_proba(X)[:, 1][0])
+        blended = (cost_p + delay_p) * 50
         return {
-            "cost_p": cost_p,
-            "delay_p": delay_p,
-            "blended": blended,
-            "band": band,
-            "model_used": active_model_type
+            "cost_p": round(cost_p, 4),
+            "delay_p": round(delay_p, 4),
+            "blended": round(blended, 1),
+            "band": _band(blended),
+            "model_used": active_model_type,
         }
     except Exception as e:
-        logger.error(f"Prediction failed: {e}")
-        return {"cost_p": 0.0, "delay_p": 0.0, "blended": 0.0, "band": "ERROR", "model_used": "error"}
+        logger.error("Prediction failed: %s", e)
+        return {"model_used": "error"}
