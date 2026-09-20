@@ -40,3 +40,17 @@ class RiskScore(Base):
     blended_risk_score = Column(Float, default=0.0)
     risk_band = Column(String, default="LOW") # LOW, MEDIUM, HIGH, CRITICAL
     calculated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class MonthlyProgress(Base):
+    __tablename__ = "monthly_progress"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    project_name = Column(String, index=True) # We will fuzzy-match this to the main Project table later
+    state = Column(String)
+    sector = Column(String, nullable=True)
+    report_month = Column(String, index=True) # e.g., "January 2026"
+    
+    original_cost = Column(Numeric(18, 2), default=0.0)
+    revised_cost = Column(Numeric(18, 2), default=0.0)
+    cumulative_expenditure = Column(Numeric(18, 2), default=0.0)
+    physical_progress = Column(Float, default=0.0)
